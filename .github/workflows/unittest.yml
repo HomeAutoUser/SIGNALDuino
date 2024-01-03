@@ -9,11 +9,11 @@ jobs:
   unittest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with: 
           submodules: true
 
-      - uses: lukka/get-cmake@v3.27.4
+      - uses: lukka/get-cmake@v3.28.0
         with:
           cmakeVersion: "~3.25.0"  # <--= optional, use most recent 3.25.x version
 
@@ -26,7 +26,7 @@ jobs:
           path: |
             ./tests/build/_deps/
           key: cmake-deps
-      
+             
       - name: cmake prepareBuild
         working-directory: ./tests/build
         run: cmake -DCMAKE_BUILD_TYPE=Release ..
@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with: 
           submodules: true
           fetch-depth: 0
@@ -76,19 +76,27 @@ jobs:
             ~/.platformio/.cache
           key: ${{ matrix.envName }}-pio
 
-      - uses: actions/setup-python@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+           languages: cpp
+    
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - name: Install PlatformIO Core
         run: pip install --upgrade platformio
+
+      - name: Inject slug/short variables
+        uses: rlespinasse/github-slug-action@v4
 
       - name: Run PlatformIO and compile sketch
         id: compile_sketch
         run: |
           export COMPILE_OUTPUT=$(pio run -e ${{ matrix.envName }} )
           echo "$COMPILE_OUTPUT"
-          FILEEXT=$(find .pio/build/${{ matrix.envName }} -maxdepth 1 \( -name 'SIGNALduino*.bin' -o -name 'SIGNALduino*.hex' \) | while read file; do echo "${file##*.}"; done)
-          FILENAME=$(find .pio/build/${{ matrix.envName }}/ -maxdepth 1 \( -name 'SIGNALduino*.bin' -o -name 'SIGNALduino*.hex' \) -printf "%f" )
+          FILEEXT=$(find .pio/build/${{ matrix.envName }} -maxdepth 1 \( -name 'SIGNALDuino*.bin' -o -name 'SIGNALDuino*.hex' \) | while read file; do echo "${file##*.}"; done)
+          FILENAME=$(find .pio/build/${{ matrix.envName }}/ -maxdepth 1 \( -name 'SIGNALDuino*.bin' -o -name 'SIGNALDuino*.hex' \) -printf "%f" )
           echo "Extension: $FILEEXT"
           echo "FILENAME=$(echo $FILENAME | tr -d '\n')" >> $GITHUB_OUTPUT
           echo "FILEEXT=$(echo $FILEEXT | tr -d '\n')" >> $GITHUB_OUTPUT
@@ -101,6 +109,11 @@ jobs:
           echo "| ENV | Flash | Ram |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|-----|" >> $GITHUB_STEP_SUMMARY
           echo "| ${{ matrix.envName }} | ${{ steps.compile_sketch.outputs.SKETCHSIZE }} | ${{ steps.compile_sketch.outputs.GLOBALRAMUSAGE }} |" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/board:${{matrix.envName}}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
@@ -132,4 +145,4 @@ jobs:
           generate_release_notes: true
           draft: true
           files: |
-            ${{steps.download.outputs.download-path}}/SIGNALduino*/SIGNALduino*
+            ${{steps.download.outputs.download-path}}/SIGNALDuino*/SIGNALDuino*
