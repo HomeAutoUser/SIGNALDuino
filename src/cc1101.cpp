@@ -63,6 +63,18 @@ const uint8_t cc1101::initVal[] PROGMEM =
 0x00, // 28 RCCTRL0
 };
 
+#ifdef ETHERNET_PRINT
+String cc1101::dec2hex(uint8_t val) { // convert one byte to hex string, return hex string "00" from dec 0
+  char ret[3];
+  ret[0] = (val >> 4);
+  ret[1] = (val & 0x0F);
+  ret[0] = (ret[0] > 9 ? ret[0] + 55 : ret[0] + '0');
+  ret[1] = (ret[1] > 9 ? ret[1] + 55 : ret[1] + '0');
+  ret[2] = '\0';
+  return ret;
+}
+#endif
+
 byte cc1101::hex2int(byte hex) {    // convert a hexdigit to int (smallest variant, sketch is bigger with printf or scanf)
 	if (hex >= '0' && hex <= '9') hex = hex - '0';
 	else if (hex >= 'a' && hex <= 'f') hex = hex - 'a' + 10;
@@ -320,9 +332,7 @@ void cc1101::setup() {
 	pinAsInput(misoPin);
 #endif
 
-#ifndef ARDUINO_MAPLEMINI_F103CB
-	pinAsOutput(csPin);                // set pins for SPI communication
-#endif
+pinAsOutput(csPin);                // set pins for SPI communication
 
 #ifdef PIN_MARK433
 	pinAsInputPullUp(PIN_MARK433);
@@ -337,9 +347,7 @@ void cc1101::setup() {
 #elif ARDUINO_MAPLEMINI_F103CB
 	SPI_2.begin();                     // Initialize the SPI_2 port
 	SPI_2.beginTransaction(SPISettings(4000000, MSBFIRST, SPI_MODE0));
-
-	pinAsOutput(radioCsPin[1]);        // standard value 1 = B ( only for using one cc1101 )
-	digitalHigh(radioCsPin[1]);
+	digitalHigh(csPin);
 #else
 	SPI.setDataMode(SPI_MODE0);
 	SPI.setBitOrder(MSBFIRST);
@@ -551,9 +559,8 @@ void cc1101::CCinit(void) {                                // initialize CC1101
 }
 
 
-void cc1101::getRxFifo(uint16_t Boffs) {           // xFSK
+void cc1101::getRxFifo() {           // xFSK
 	uint8_t fifoBytes;
-	bool dup;                                      // true bei identischen Wiederholungen bei readRXFIFO
 
 	if (isHigh(PIN_RECEIVE)) {                     // wait for CC1100_FIFOTHR given bytes to arrive in FIFO
 		#ifdef PIN_LED_INVERSE
@@ -586,95 +593,48 @@ void cc1101::getRxFifo(uint16_t Boffs) {           // xFSK
 				cc1101::freqOffAcc += round(cc1101::freqErrAvg);
 				cc1101::writeReg(0x0C, cc1101::freqOffAcc); // 0x0C: FSCTRL0 – Frequency Synthesizer Control
 			}
-
-/*
- * !!! for DEVELOPMENT and DEBUG only !!!
- * 
-      #ifdef DEBUG
-        if (cc1101::ccmode == 0) {
-          MSG_PRINT(F("RX fifoBytes ("));
-          MSG_PRINT(fifoBytes);
-          MSG_PRINTLN((") "));
-        }
-      #endif
- * 
- */
-			if (fifoBytes < 0x80) {                // RXoverflow?
+			if (fifoBytes < 0x80) { // 0x80 = 128, RXoverflow?
 				if (fifoBytes > ccMaxBuf) {
-					fifoBytes = ccMaxBuf;
+					fifoBytes = ccMaxBuf; // 64 Byte
 				}
-				dup = readRXFIFO(fifoBytes);
-				if (cc1101::ccmode != 2 || dup == false) { // Ralf9: 2 - FIFO ohne dup
-
-					if (cc1101::ccmode != 9) { // Ralf9: 9 - FIFO mit Debug Ausgaben
-						MSG_PRINT(char(MSG_START));      // SDC_WRITE not work in this scope
-						MSG_PRINT(F("MN;D="));
+				readRXFIFO(fifoBytes); // read FIFO in ccBuf[]
+				#ifdef ETHERNET_PRINT
+					String msg = "";
+					msg.reserve(160); // 64 * 2 = 128 + 32 = 160 (32 Byte for "MN;D=;R=239;A=-255" etc.) 
+					msg += char(MSG_START);
+					msg += F("MN;D=");
+					for (uint8_t i = 0; i < fifoBytes; i++) {
+						msg += dec2hex(ccBuf[i]);
 					}
+					msg += F(";R=");
+					msg += RSSI;
+					msg += F(";A=");
+					msg += freqErr;
+					msg += ";";
+					msg += char(MSG_END);
+					msg += "\n";
+					MSG_PRINT(msg);
+				#else
+					MSG_PRINT(char(MSG_START));
+					MSG_PRINT(F("MN;D="));
 					for (uint8_t i = 0; i < fifoBytes; i++) {
 						MSG_PRINTtoHEX(ccBuf[i]);
 					}
-					
-/* 
- * !!! for DEVELOPMENT and DEBUG only !!!
- * 
-          #ifdef DEBUG
-            if (cc1101::ccmode == 0) {
-              MSG_PRINT(F("cc1101 getRXBYTES ("));
-              MSG_PRINT(cc1101::getRXBYTES());
-              MSG_PRINTLN((")"));
-            }
-          #endif
- * 
- */
-
 					MSG_PRINT(F(";R="));
 					MSG_PRINT(RSSI);
 					MSG_PRINT(F(";A="));
 					MSG_PRINT(freqErr);
 					MSG_PRINT(';');
-					MSG_PRINT(char(MSG_END));      // SDC_WRITE not work in this scope
+					MSG_PRINT(char(MSG_END));
 					MSG_PRINT("\n");
-				}
+				#endif
 			}
-
-/*
-      if (ccmode == 4) {
-        switch (cc1101::getMARCSTATE()) {
-          // RX_OVERFLOW
-        case 17:
-          // IDLE
-        case 1:
-          cc1101::ccStrobe_SFRX();  // Flush the RX FIFO buffer
-          cc1101::ccStrobe_SIDLE(); // Idle mode
-          cc1101::ccStrobe_SNOP();  // No operation
-          cc1101::ccStrobe_SRX();   // Enable RX
-          break;
-        }
-      } else {
-*/
 			marcstate = cc1101::getMARCSTATE();
-
-/*
- * !!! for DEVELOPMENT and DEBUG only !!!
- * 
-			#ifdef DEBUG
-				if (cc1101::ccmode != 3) {
-					MSG_PRINT(F(" M"));
-					MSG_PRINTLN(marcstate);
-				}
-			#endif
- * 
- */
-
       if (marcstate == 17 || cc1101::ccmode != 3) {   // RXoverflow oder nicht ASK/OOK
-//			if (marcstate == 17 || cc1101::ccmode == 0) {   // RXoverflow oder LaCrosse?
 				if (cc1101::flushrx()) {                    // Flush the RX FIFO buffer
 					cc1101::setReceiveMode();
 				}
 			}
-/*
-		}
-*/
 		}
 	}
 }

@@ -78,7 +78,7 @@ char* myitoa(int num, char *str) {
 
 
 //Helper function to check buffer for bad data
-const bool SignalDetectorClass::checkMBuffer(const uint8_t begin)
+bool SignalDetectorClass::checkMBuffer(const uint8_t begin)
 {
 	for (uint8_t i = begin; i < messageLen-1; i++)
 	{
@@ -215,8 +215,7 @@ inline void SignalDetectorClass::doDetect()
 	}
 	else if (messageLen == minMessageLen) {
 		state = detecting;  // Set state to detecting, because we have more than minMessageLen data gathered, so this is no noise
-		if (_rssiCallback != nullptr) 
-			rssiValue = _rssiCallback();
+		rssiValue = _rssiCallback();
 	}
 
 	int8_t fidx = findpatt(*first);
@@ -235,7 +234,7 @@ inline void SignalDetectorClass::doDetect()
 				processMessage();
 				calcHisto();
 			}
-			for (uint8_t i = messageLen - 1 ; i >= 0 && histo[pattern_pos] > 0 && messageLen>0; --i)
+			for (uint8_t i = messageLen - 1 ; histo[pattern_pos] > 0 && messageLen > 0; --i)
 			{
 				if (message[i] == pattern_pos) // Finde den letzten Verweis im Array auf den Index der gleich ueberschrieben wird
 				{
@@ -364,7 +363,9 @@ void SignalDetectorClass::compress_pattern()
 
 void SignalDetectorClass::processMessage()
 {
+#ifdef ESP8266
 	yield();
+#endif
 	char buf[22] = {};
 	uint8_t n = 0;
 
@@ -505,11 +506,10 @@ void SignalDetectorClass::processMessage()
 					//␂Ms;��;��;���;��;D$$!!!###!#!#!!!!#!##!##!!##!!!!!!!!!!!!!!#!!␂    ;C2;S4;    RF1;O;m2;␃
 					SDC_PRINT(";C"); SDC_PRINT(clock + 48); SDC_PRINT(";S"); SDC_PRINT(sync + 48); SDC_PRINT(';');
 
-					if (_rssiCallback != nullptr)
-					{
-						//␂Ms;��;��;���;��;D$$!!!###!#!#!!!!#!##!##!!##!!!!!!!!!!!!!!#!!␂;C2;S4;    RF1;    O;m2;␃
-						SDC_PRINT('R'); SDC_PRINT_intToHex(rssiValue); SDC_PRINT(';');
-					}
+					//␂Ms;��;��;���;��;D$$!!!###!#!#!!!!#!##!##!!##!!!!!!!!!!!!!!#!!␂;C2;S4;    RF1;    O;m2;␃
+					
+					writeRSSI();
+
 				}
 				else {
 					SDC_PRINT("MS;");
@@ -532,11 +532,8 @@ void SignalDetectorClass::processMessage()
 					//␂MS;P2=-14273;P3=371;P4=-1430;P5=1285;P6=-540;D=32345634563456345634563456345634565656343434343434    ;CP=3;SP=2;    R=35;m2;␃
 					SDC_PRINT(";CP="); SDC_PRINT(clock + 48); SDC_PRINT(";SP="); SDC_PRINT(sync + 48); SDC_PRINT(';');
           
-					if (_rssiCallback != nullptr)
-					{
-						//␂MS;P2=-14273;P3=371;P4=-1430;P5=1285;P6=-540;D=32345634563456345634563456345634565656343434343434;CP=3;SP=2;    R=35;    m2;␃
-						SDC_PRINT("R="); SDC_PRINT(myitoa(rssiValue, buf)); SDC_PRINT(';');
-					}
+					//␂MS;P2=-14273;P3=371;P4=-1430;P5=1285;P6=-540;D=32345634563456345634563456345634565656343434343434;CP=3;SP=2;    R=35;    m2;␃
+					writeRSSI();
 				}
 
 				if (m_overflow) {
@@ -678,9 +675,8 @@ MUOutput:
 						SDC_PRINT(";L="); SDC_PRINT(myitoa(mcdecoder->ManchesterBits.valcount, buf));
 						SDC_PRINT(';');
 
-						if (_rssiCallback != nullptr)
-						{
-							//␂MC;LL=-2926;LH=2935;SL=-1472;SH=1525;D=AFF1FFA1;C=1476;L=32;    R=0;    ␃
+						//␂MC;LL=-2926;LH=2935;SL=-1472;SH=1525;D=AFF1FFA1;C=1476;L=32;    R=0;    ␃
+						if (rssiValue != RSSI_NOT_AVAILABLE) {
 							SDC_PRINT("R="); SDC_PRINT(myitoa(rssiValue, buf)); SDC_PRINT(';');
 						}
 
@@ -767,11 +763,8 @@ MUOutput:
 					//␂Mu;���;�؁;���;���;���;�Å;���;�܅;D␁#$TgTTgggggggggggTgggT    ;C7;    R21;␃
 					SDC_PRINT(";C"); SDC_PRINT(clock + 48); SDC_PRINT(';');
 
-					if (_rssiCallback != nullptr)
-					{
-						//␂Mu;���;�؁;���;���;���;�Å;���;�܅;D␁#$TgTTgggggggggggTgggT;C7;    R21;    ␃
-						SDC_PRINT('R'); SDC_PRINT_intToHex(rssiValue); SDC_PRINT(';');
-					}
+					//␂Mu;���;�؁;���;���;���;�Å;���;�܅;D␁#$TgTTgggggggggggTgggT;C7;    R21;    ␃
+					writeRSSI();
 				}
 				else {
 				
@@ -798,11 +791,8 @@ MUOutput:
 					//␂MU;P0=-32001;P3=373;P4=-1432;P5=1287;P6=-540;D=34563456345634563456345634563456565634343434343430    ;CP=3;    R=25;␃
 					SDC_PRINT(";CP="); SDC_PRINT(clock + 48); SDC_PRINT(';');
 
-					if (_rssiCallback != nullptr)
-					{
-						//␂MU;P0=-32001;P3=373;P4=-1432;P5=1287;P6=-540;D=34563456345634563456345634563456565634343434343430;CP=3;    R=25;    ␃
-						SDC_PRINT("R="); SDC_PRINT(myitoa(rssiValue, buf)); SDC_PRINT(';');
-					}
+					//␂MU;P0=-32001;P3=373;P4=-1432;P5=1287;P6=-540;D=34563456345634563456345634563456565634343434343430;CP=3;    R=25;    ␃
+					writeRSSI();
 				}
 
 				if (m_overflow) {
@@ -861,7 +851,6 @@ MUOutput:
 	//SDC_PRINTLN("process finished");
 }
 
-
 /* function to convert to HEX without a leading zero */
 void SignalDetectorClass::SDC_PRINT_intToHex(unsigned int numberToPrint) {  // smaller memory variant for sprintf hex output ( sprintf(buf, "R%X;", value) )
   if (numberToPrint >= 16)
@@ -869,6 +858,7 @@ void SignalDetectorClass::SDC_PRINT_intToHex(unsigned int numberToPrint) {  // s
   /* line is needed, no line - no output !!! */
   SDC_PRINT("0123456789ABCDEF"[numberToPrint % 16]);
 }
+
 
 
 void SignalDetectorClass::reset()
@@ -897,13 +887,13 @@ void SignalDetectorClass::reset()
 }
 
 
-const status SignalDetectorClass::getState()
+status SignalDetectorClass::getState()
 {
 	return status();
 }
 
 
-const bool SignalDetectorClass::inTol(const int val, const int set, const int tolerance)
+bool SignalDetectorClass::inTol(const int val, const int set, const int tolerance)
 {
 	// tolerance = tolerance == 0 ? tol : tolerance;
 	//return (abs(val - set) <= tolerance == 0 ? tol: tolerance);
@@ -962,7 +952,7 @@ void SignalDetectorClass::printOut()
 }
 
 
-const size_t SignalDetectorClass::write(const uint8_t *buf, size_t size)
+size_t SignalDetectorClass::write(const uint8_t *buf, size_t size)
 {
 	if (_streamCallback == nullptr)
 		return 0;
@@ -970,14 +960,14 @@ const size_t SignalDetectorClass::write(const uint8_t *buf, size_t size)
 }
 
 
-const size_t SignalDetectorClass::write(const char *str) {
+size_t SignalDetectorClass::write(const char *str) {
 	if (str == nullptr)
 		return 0;
 	return write((const uint8_t*)str, strlen(str));
 }
 
 
-const size_t SignalDetectorClass::write(uint8_t b)
+size_t SignalDetectorClass::write(uint8_t b)
 {
 	return write(&b, 1);
 }
@@ -1101,7 +1091,7 @@ bool SignalDetectorClass::getSync()
 
 		for (int8_t p = patternLen - 1; p >= 0; --p)  // Schleife fuer langen Syncpuls
 		{
-			uint16_t syncabs = abs(pattern[p]);
+			int16_t syncabs = abs(pattern[p]);
 			if ((pattern[p] < 0) &&
 				(syncabs < syncMaxMicros && syncabs / pattern[clock] <= syncMaxFact) &&
 				(syncabs > syncMinFact*pattern[clock]) &&
@@ -1140,38 +1130,21 @@ bool SignalDetectorClass::getSync()
 	return false;
 }
 
-/*
-void SignalDetectorClass::printMsgStr(const String * first, const String * second, const String * third)
-{
-	SDC_PRINT(*first);
-	SDC_PRINT(*second);
-	SDC_PRINT(*third);
 
-}
-*/
-/*
-int8_t SignalDetectorClass::printMsgRaw(uint8_t m_start, const uint8_t m_end, const String * preamble, const String * postamble)
-{
-	SDC_PRINT(*preamble);
-	//String msg;
-	//msg.reserve(m_end-mstart);
-
-	for (; m_start <= m_end; m_start++)
-	{
-		//msg + =message[m_start];
-		//SDC_PRINT((100*message[m_start])+(10*message[m_start])+message[m_start]);
-		SDC_PRINT(message[m_start]);
-
+void SignalDetectorClass::writeRSSI() {
+	if (rssiValue != RSSI_NOT_AVAILABLE) {
+		SDC_PRINT("R");
+		if (MredEnabled) {
+			SDC_PRINT_intToHex(rssiValue);
+		} else {
+			char buf[8];
+			SDC_PRINT("=");
+			myitoa(rssiValue, buf);
+			SDC_PRINT(buf);
+		}
+		SDC_PRINT(';');
 	}
-	//SDC_PRINT(msg);
-	SDC_PRINT(*postamble);
-	yield();
-
 }
-*/
-
-
-
 
 
 
@@ -1240,7 +1213,7 @@ void ManchesterpatternDecoder::setMinBitLen(const uint8_t len)
 *
 * (documentation goes here)
 */
-const bool ManchesterpatternDecoder::isLong(const uint8_t pulse_idx)
+bool ManchesterpatternDecoder::isLong(const uint8_t pulse_idx)
 {
 	return (pulse_idx == longlow || pulse_idx == longhigh);
 }
@@ -1250,7 +1223,7 @@ const bool ManchesterpatternDecoder::isLong(const uint8_t pulse_idx)
 *
 * (documentation goes here)
 */
-const bool ManchesterpatternDecoder::isShort(const uint8_t pulse_idx)
+bool ManchesterpatternDecoder::isShort(const uint8_t pulse_idx)
 {
 	return (pulse_idx == shortlow || pulse_idx == shorthigh);
 }
@@ -1268,9 +1241,9 @@ const bool ManchesterpatternDecoder::isShort(const uint8_t pulse_idx)
 {
 	char hexStr[] = "00" ; // Not really needed
 	#ifndef NOSTRING
-		message->reserve((ManchesterBits.valcount /4)+2);
 		if (!message)
 			return;
+		message->reserve((ManchesterBits.valcount /4)+2);
 	#else
 		char *message = (char*)malloc((sizeof(char)*ManchesterBits.valcount / 4) + 2);
 		char *mptr=message;
@@ -1371,6 +1344,7 @@ void ManchesterpatternDecoder::printMessageHexStr()
 }
 
 
+
 /** @brief (one liner)
 *
 * (documentation goes here)
@@ -1465,7 +1439,7 @@ unsigned char ManchesterpatternDecoder::getMCByte(const uint8_t idx) {
 *
 * (Call only after ismanchester returned true)
 */
-const bool ManchesterpatternDecoder::doDecode() {
+bool ManchesterpatternDecoder::doDecode() {
 	//SDC_PRINT("bitcnt:");SDC_PRINTLN(bitcnt);
 	uint8_t i = 0;
 	pdec->m_truncated = false;
@@ -1534,7 +1508,6 @@ const bool ManchesterpatternDecoder::doDecode() {
 			}
 			else
 				bit = bit ^ 1; // umdrehen, da es erneut beim dekodieren umgedreht wird 
-
 		}
 
 		// Decoding occures here
@@ -1698,7 +1671,7 @@ const bool ManchesterpatternDecoder::doDecode() {
 *
 * (Check signal based on patternLen, histogram and pattern store for valid manchester style.Provides key indexes for the 4 signal states for later decoding)
 */
-const bool ManchesterpatternDecoder::isManchester()
+bool ManchesterpatternDecoder::isManchester()
 {
 	// Durchsuchen aller Musterpulse und prueft ob darin eine clock vorhanden ist
 	#if DEBUGDETECT >= 1
