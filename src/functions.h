@@ -19,20 +19,19 @@
   extern volatile unsigned long lastTime;
   extern SimpleFIFO<int, FIFO_LENGTH> FiFo; //store FIFO_LENGTH # ints
   extern SignalDetectorClass musterDec;
-  extern bool hasCC1101;
   extern void DBG_PRINTtoHEX(uint8_t b);
   extern bool AfcEnabled;
+  extern bool hasCC1101;
   #ifdef CMP_CC1101
-    #if defined (ESP8266) || defined (ESP32)
+    extern int8_t cc1101::freqOffAcc;
+    extern float cc1101::freqErrAvg;
+    #if defined (ESP8266) || defined (ESP32) || defined (ARDUINO_MAPLEMINI_F103CB)
       extern bool wmbus;
       extern bool wmbus_t;
     #endif 
-    extern int8_t cc1101::freqOffAcc;       
-    extern float cc1101::freqErrAvg;        
   #endif 
 
   #define pulseMin  90
-
 
   #if !defined(ESP8266) && !defined(ESP32)
     #define IRAM_ATTR 
@@ -84,7 +83,6 @@ void IRAM_ATTR handleInterrupt() {
 
 
 void enableReceive() {
-  // ToDo MR if(cc1101::ccmode == 0) ???
   attachInterrupt(digitalPinToInterrupt(PIN_RECEIVE), handleInterrupt, CHANGE);
   #ifdef CMP_CC1101
     if (hasCC1101) cc1101::setReceiveMode();
@@ -93,18 +91,16 @@ void enableReceive() {
 
 
 void disableReceive() {
-  // ToDo MR if(cc1101::ccmode == 0) ???
   detachInterrupt(digitalPinToInterrupt(PIN_RECEIVE));
 
   #ifdef CMP_CC1101
     if (hasCC1101) cc1101::setIdleMode();
   #endif
-  FiFo.flush();
 }
 
 
 //================================= EEProm commands ======================================
-#if defined (CMP_CC1101) && (defined (ESP8266) || defined (ESP32))
+#if defined (CMP_CC1101) && (defined (ESP8266) || defined (ESP32) || defined (ARDUINO_MAPLEMINI_F103CB))
   void storeFunctions(const int8_t ms, int8_t mu, int8_t mc, int8_t red, int8_t afc, int8_t wmbus, int8_t wmbus_t) {
 #else
   void storeFunctions(const int8_t ms, int8_t mu, int8_t mc, int8_t red, int8_t afc) {
@@ -125,7 +121,7 @@ void disableReceive() {
   mc = mc << 2;
   red = red << 3;
   afc = afc << 4;
-  #if defined (CMP_CC1101) && (defined (ESP8266) || defined (ESP32))
+  #if defined (CMP_CC1101) && (defined (ESP8266) || defined (ESP32) || defined (ARDUINO_MAPLEMINI_F103CB))
     wmbus = wmbus << 5;
     wmbus_t = wmbus_t << 6;
     int8_t dat = ms | mu | mc | red | afc | wmbus | wmbus_t;
@@ -138,7 +134,7 @@ void disableReceive() {
   #endif
 }
 
-#if defined (CMP_CC1101) && (defined (ESP8266) || defined (ESP32))
+#if defined (CMP_CC1101) && (defined (ESP8266) || defined (ESP32) || defined (ARDUINO_MAPLEMINI_F103CB))
   void getFunctions(bool *ms, bool *mu, bool *mc, bool *red, bool *afc, bool *wmbus, bool *wmbus_t) {
 #else
   void getFunctions(bool *ms, bool *mu, bool *mc, bool *red, bool *afc) {
@@ -150,7 +146,7 @@ void disableReceive() {
   *mc = bool(dat &(1 << 2));
   *red = bool(dat &(1 << 3));
   *afc = bool(dat &(1 << 4));
-  #if defined (CMP_CC1101) && (defined (ESP8266) || defined (ESP32))
+  #if defined (CMP_CC1101) && (defined (ESP8266) || defined (ESP32) || defined (ARDUINO_MAPLEMINI_F103CB))
     *wmbus = bool(dat &(1 << 5));
     *wmbus_t = bool(dat &(1 << 6));
   #endif
@@ -176,13 +172,12 @@ void initEEPROM(void) {
   if (EEPROM.read(EE_MAGIC_OFFSET) == VERSION_1 && EEPROM.read(EE_MAGIC_OFFSET + 1) == VERSION_2) {
     DBG_PRINT(F("Reading values from ")); DBG_PRINT(FPSTR(TXT_EEPROM)); DBG_PRINT(FPSTR(TXT_DOT)); DBG_PRINT(FPSTR(TXT_DOT));
   } else {
-    #if defined (CMP_CC1101) && (defined (ESP8266) || defined (ESP32))
+    #if defined (CMP_CC1101) && (defined (ESP8266) || defined (ESP32) || defined (ARDUINO_MAPLEMINI_F103CB))
       storeFunctions(1, 1, 1, 1, 0, 0, 0); // Init EEPROM with all flags enabled, AFC, WMBus and WMBus_T disabled
     #else
       storeFunctions(1, 1, 1, 1, 0); // Init EEPROM with all flags enabled, AFC disabled
     #endif
-    //hier fehlt evtl ein getFunctions()
-    MSG_PRINTLN(F("Init eeprom to defaults after flash"));
+    MSG_PRINTLN(F("Init eeprom to defaults after clear eeprom"));
     EEPROM.write(EE_MAGIC_OFFSET, VERSION_1);
     EEPROM.write(EE_MAGIC_OFFSET + 1, VERSION_2);
     #ifdef CMP_CC1101
@@ -193,7 +188,7 @@ void initEEPROM(void) {
       EEPROM.commit();
     #endif
   }
-  #if defined (CMP_CC1101) && (defined (ESP8266) || defined (ESP32))
+  #if defined (CMP_CC1101) && (defined (ESP8266) || defined (ESP32) || defined (ARDUINO_MAPLEMINI_F103CB))
     getFunctions(&musterDec.MSenabled, &musterDec.MUenabled, &musterDec.MCenabled, &musterDec.MredEnabled, &AfcEnabled, &wmbus, &wmbus_t);
   #else
     getFunctions(&musterDec.MSenabled, &musterDec.MUenabled, &musterDec.MCenabled, &musterDec.MredEnabled, &AfcEnabled);
@@ -217,5 +212,34 @@ inline unsigned long getUptime() {
   return (0xFFFFFFFF / 1000) * times_rolled + (now / 1000);
 }
 
+#if defined (ESP8266) || defined (ESP32)
+// This function will read IPAddress (4 byte) from the eeprom at the specified address to address + 3.
+IPAddress EEPROM_read_ipaddress(int address) {
+  IPAddress ip;
+  for (uint8_t x = 0; x < 4; x++) {
+    ip[x] = EEPROM.read(address + x);
+  }
+  #ifdef DEBUG
+    Serial.print(F("EEPROM read IPAddress at address: "));
+    Serial.print(address);
+    Serial.print(F(" - "));
+    Serial.println(ip);
+  #endif
+  return ip;
+}
 
+// This function will write IPAddress (4 byte) to the eeprom at the specified address to address + 3.
+void EEPROM_write_ipaddress(int address, IPAddress ip) {
+  #ifdef DEBUG
+    Serial.print(F("EEPROM write IPAddress at address: "));
+    Serial.print(address);
+    Serial.print(F(" - "));
+    Serial.println(ip);
+  #endif
+  for (uint8_t x = 0; x < 4; x++) {
+    EEPROM.write(address + x, ip[x]);
+  }
+  EEPROM.commit();
+}
+#endif
 #endif // endif _FUNCTIONS_h
